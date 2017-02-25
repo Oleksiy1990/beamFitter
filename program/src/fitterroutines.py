@@ -12,26 +12,32 @@ from mathmodels import residual_G1D, residual_G2D, residual_G2D_norotation
 
 class Image:
 
-    def __init__(self,source="file",imagepath=None):
+    def __init__(self,source="file",imagepath=None,pixelsize_microns=5,omega_fraction=2):
         """
         get the image from a file or some camera source and convert into into a
         numpy array with skimage.io.imread function
 
-        :param source:
-        :param imagepath:
+        param: source
+        param: imagepath
+        param: omega_fraction
 
-        retuns imagearray, which has the numpy array form of the original image
+        retuns: imagearray, which has the numpy array form of the original image
         """
         if source != "file":
             sys.exit("The image source variable is incorrect. Use file ")
+            # this is for possibly making it use pictures directly later
 
-        if source == "file" and isinstance(imagepath,str): #check double if
+        if source == "file" and isinstance(imagepath,str): 
             try:
                 self.image_array = io.imread(imagepath,as_grey=True)
+                # image_array is an ndarray as returned by io.imread, in grayscale
             except:
                 sys.exit("The image could not be read on path",imagepath)
         else:
-            pass
+            sys.exit("Imagepath parameter must be a string")
+
+        self.__pixelsize = pixelsize_microns
+        self.__omega_fraction = omega_fraction
 
 
     def __startparams_estimate(self,data_array):
@@ -55,10 +61,10 @@ class Image:
         """
 
 
-
+        # first we smoothen with a Gaussian filter to produce nice estimates of starting
+        # fit params
         smoothened = [gaussian_filter1d(data_array,len(data_array)/x) \
                      for x in range(10,101,10)]
-
         # we take averages of the estimates based on data with different
         # amounts of smoothing
         peak_pos_list = np.argmax(smoothened,axis=1)
@@ -77,21 +83,62 @@ class Image:
             background_list[9]))
         width_estim = (elems_above[0][-1]-elems_above[0][0])
 
+        # return the estimates; they will be the starting points for fitting    
+        # if everything is good, they are nice starting points, leading to fast and 
+        # reliable fitting
         return (peak_height_estim,peak_pos_estim,width_estim,background_estim)
 
 
-    def fit_axis(self,image_nparray2D=None,axis=None,minim_method="nelder"):
+    def __format_picture(self,x_cent,omega_x,y_cent,omega_y):
+
+        """
+        This function takes a 2D array and the values for center position of a Gaussian
+        peak and its width to crop out a region within a given number of omega from the
+        center (the default is 2*omega). This is useful for 2D fitting and plotting, when
+        the beam is much smaller than the entire picture size, it's much faster to
+        only fit where the peak as, without evaluating too many background points
+
+        """
+
+        # one has to be careful here because index 0 is not necessarily "x" in plots
+        # index 0 is always rows, and that's what usually plotted vertically
+
+        length_x = self.image_array.shape[0]
+        length_y = self.image_array.shape[1]
+
+        # Define the positions of the borders on left, right, top, bottom 
+        b_left = int(x_cent - self.__omega_fraction*omega_x)
+        b_right = int(x_cent + self.__omega_fraction*omega_x)
+        b_bottom = int(y_cent - self.__omega_fraction*omega_y)
+        b_top = int(y_cent + self.__omega_fraction*omega_y)
+        b_left = b_left if (b_left >= 0) else 0
+        b_right = b_right if (b_right <= length_x) else length_x
+        b_bottom = b_bottom if (b_bottom >= 0) else 0
+        b_top = b_top if (b_top <= length_y) else length_y
+
+
+        formatted_array = self.image_array[b_left:b_right,b_bottom:b_top]
+        return formatted_array
+
+
+    def fit_axis(self,axis,minim_method="nelder"):
         """
         This function fits one axis of a 2D array representing an image by doing
         a summation along the other axis
 
-        fit_axis(image_nparray2D,axis,minim_method="nelder")
+        fit_axis(axis,minim_method="nelder")
         """
 
+        if axis not in [0,1]:
+            sys.exit("The axis can only be 0 or 1 in fit_axis function")
 
-        axis_data = np.sum(image_nparray2D,axis = 1) if (axis == 0) else np.sum(image_nparray2D,axis = 0)
+
+        axis_data = np.sum(self.image_array,axis = 1) if (axis == 0) else np.sum(self.image_array,axis = 0)
         axis_points = np.linspace(1,len(axis_data),len(axis_data))
         param_estimates = self.__startparams_estimate(axis_data)
+
+        # using lmfit package for fitting (based on Scipy)
+        # https://lmfit.github.io/lmfit-py/
         params_for_fit = Parameters()
         params_for_fit.add('I_zero',value=param_estimates[0],min=0,max=np.amax(axis_data))
         params_for_fit.add('r_zero',value=param_estimates[1],min=1,max=len(axis_data))
@@ -103,40 +150,11 @@ class Image:
         return (axis_points,axis_data,fit_res)
 
 
-    def format_picture(self,image_nparray2D=None,x_cent=None,omega_x=None,y_cent=None,omega_y=None,omega_fraction=2):
 
-        """
-        This function takes a 2D array and the values for center position of a Gaussian
-        peak and its width to crop out a region within a given number of omega from the
-        center (the default is 2*omega). This is useful for 2D fitting and plotting, when
-        the beam is much smaller than the entire picture size, it's much faster to
-        only fit where the peak as, without evaluating too many background points
-
-        format_picture(image_nparray2D,x_cent,omega_x,y_cent,omega_y,omega_fraction=2)
-        """
-
-        # one has to be careful here because index 0 is not necessarily "x" in plots
-        # index 0 is always rows, and that's what usually plotted vertically
-        length_x = image_nparray2D.shape[0]
-        length_y = image_nparray2D.shape[1]
-        b_left = int(x_cent - omega_fraction*omega_x)
-        b_right = int(x_cent + omega_fraction*omega_x)
-        b_bottom = int(y_cent - omega_fraction*omega_y)
-        b_top = int(y_cent + omega_fraction*omega_y)
-        b_left = b_left if (b_left >= 0) else 0
-        b_right = b_right if (b_right <= length_x) else length_x
-        b_bottom = b_bottom if (b_bottom >= 0) else 0
-        b_top = b_top if (b_top <= length_y) else length_y
-        formatted = image_nparray2D[b_left:b_right,b_bottom:b_top]
-        return formatted
-
-
-
-    def fit2D(self,image_nparray2D=None,fit_axis0=None,fit_axis1=None,minim_method="nelder",omega_fraction=2,rotation=True):
-        if fit_axis0 is None:
-            fit_axis0 = fit_axis(image_nparray2D,0,minim_method)
-        if fit_axis1 is None:
-            fit_axis1 = fit_axis(image_nparray2D,1,minim_method)
+    def fit2D(self,minim_method="nelder",rotation=False):
+        
+        fit_axis0 = self.fit_axis(0,minim_method)
+        fit_axis1 = self.fit_axis(1,minim_method)
 
         # we first take all the initial parameters from 1D fits
         bgr2D_est = fit_axis0[2].params.valuesdict()["backgr"]/len(fit_axis1[0])
@@ -145,7 +163,7 @@ class Image:
         y2D_est = fit_axis1[2].params.valuesdict()["r_zero"]
         omegaY2D_est = fit_axis1[2].params.valuesdict()["omega_zero"]
 
-        smoothened_image = gaussian_filter(image_nparray2D,50)
+        smoothened_image = gaussian_filter(self.image_array,50)
         peakheight2D_est = np.amax(smoothened_image)
         #now we need to programatically cut out the region of interest out of the
         #whole picture so that fitting takes way less time
@@ -154,7 +172,7 @@ class Image:
         # and is very close to the edge, the fitting will fail, because the x and y
         # center position estimates will be off
 
-        cropped_data = format_picture(image_nparray2D,x2D_est,omegaX2D_est,y2D_est,omegaY2D_est,omega_fraction)
+        cropped_data = self.__format_picture(x2D_est,omegaX2D_est,y2D_est,omegaY2D_est)
         xvals = np.linspace(1,cropped_data.shape[0],cropped_data.shape[0])
         yvals = np.linspace(1,cropped_data.shape[1],cropped_data.shape[1])
         x, y = np.meshgrid(yvals,xvals)
@@ -188,10 +206,10 @@ class Image:
         if show:
             plt.show()
 
-
-q = Image(source="file",imagepath="/Users/oleksiy/Google Drive/PythonCode/PyTests/elliptical.jpg")
-q.plotimage()
-
+if __name__ == '__main__':
+    q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\elliptical2.jpg")
+    #q.plotimage()
+    print(q.fit_axis(0))
 
 
 

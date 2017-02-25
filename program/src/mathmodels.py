@@ -1,3 +1,13 @@
+"""
+This file defined the math models used in fitting beams. These are the models
+that go into the Minimizer function of the lmfit package to carry out minimization
+
+As of now, there are only two models, 1D and 2D Gaussians, corresponding to 
+Gaussian 00 mode in 2D, but this can possibly be extended later for more 
+complicated beam patterns, like the non-00 mode
+"""
+
+
 import numpy as np 
 
 def residual_G1D(pars, x, data=None, eps=None):
