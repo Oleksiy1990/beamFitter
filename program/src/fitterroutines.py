@@ -12,7 +12,7 @@ from mathmodels import residual_G1D, residual_G2D, residual_G2D_norotation
 
 class Image:
 
-    def __init__(self,source="file",imagepath=None,pixelsize_microns=5,omega_fraction=2):
+    def __init__(self,source="file",imagepath=None,pixelsize_mm=5e-3,omega_fraction=2):
         """
         get the image from a file or some camera source and convert into into a
         numpy array with skimage.io.imread function
@@ -36,8 +36,21 @@ class Image:
         else:
             sys.exit("Imagepath parameter must be a string")
 
-        self.__pixelsize = pixelsize_microns
+        self.__pixelsize = pixelsize_mm
         self.__omega_fraction = omega_fraction
+
+        self.axis0pts = None
+        self.axis0data = None
+        self.axis0fitresult = None
+        self.axis1pts = None
+        self.axis1data = None
+        self.axis1fitresult = None
+
+        self.x2Dgrid = None
+        self.y2Dgrid = None
+        self.fit2Dparams = None
+
+
 
 
     def __startparams_estimate(self,data_array):
@@ -121,7 +134,7 @@ class Image:
         return formatted_array
 
 
-    def fit_axis(self,axis,minim_method="nelder"):
+    def __fit_axis(self,axis,minim_method="nelder"):
         """
         This function fits one axis of a 2D array representing an image by doing
         a summation along the other axis
@@ -147,21 +160,32 @@ class Image:
         fit = Minimizer(residual_G1D,params_for_fit,fcn_args=(axis_points,),\
             fcn_kws={"data":axis_data})
         fit_res = fit.minimize(minim_method)
-        return (axis_points,axis_data,fit_res)
+
+        if axis == 0:
+            self.axis0pts = axis_points
+            self.axis0data = axis_data
+            self.axis0fitparams = fit_res.params
+
+        elif axis == 1:
+            self.axis1pts = axis_points
+            self.axis1data = axis_data
+            self.axis1fitparams = fit_res.params
+
+        # return (axis_points,axis_data,fit_res)
 
 
 
-    def fit2D(self,minim_method="nelder",rotation=False):
+    def __fit2D(self,minim_method="nelder",rotation=False):
         
-        fit_axis0 = self.fit_axis(0,minim_method)
-        fit_axis1 = self.fit_axis(1,minim_method)
+        self.__fit_axis(0,minim_method)
+        self.__fit_axis(1,minim_method)
 
         # we first take all the initial parameters from 1D fits
-        bgr2D_est = fit_axis0[2].params.valuesdict()["backgr"]/len(fit_axis1[0])
-        x2D_est = fit_axis0[2].params.valuesdict()["r_zero"]
-        omegaX2D_est = fit_axis0[2].params.valuesdict()["omega_zero"]
-        y2D_est = fit_axis1[2].params.valuesdict()["r_zero"]
-        omegaY2D_est = fit_axis1[2].params.valuesdict()["omega_zero"]
+        bgr2D_est = self.axis0fitparams.valuesdict()["backgr"]/len(self.axis0pts)
+        x2D_est = self.axis0fitparams.valuesdict()["r_zero"]
+        omegaX2D_est = self.axis0fitparams.valuesdict()["omega_zero"]
+        y2D_est = self.axis1fitparams.valuesdict()["r_zero"]
+        omegaY2D_est = self.axis1fitparams.valuesdict()["omega_zero"]
 
         smoothened_image = gaussian_filter(self.image_array,50)
         peakheight2D_est = np.amax(smoothened_image)
@@ -197,7 +221,68 @@ class Image:
             print("Not including rotation")
 
         fit_res2D = fit2D.minimize(minim_method)
-        return (x,y,fit_res2D)
+
+        self.x2Dgrid = x
+        self.y2Dgrid = y
+        self.fit2Dparams = fit_res2D.params
+        # return (x,y,fit_res2D)
+
+    def fitandprint_axis(self,axis):
+
+        if axis == 0:
+            if self.axis0fitresult == None:
+                self.__fit_axis(axis)
+            print("The sizes are in mm")
+            for (key,val) in self.axis0fitparams.valuesdict().items():
+                print(key,"=",val)
+        if axis == 1:
+            if self.axis1fitresult == None:
+                self.__fit_axis(axis)
+            print("The sizes are in mm")
+            for (key,val) in self.axis1fitparams.valuesdict().items():
+                print(key,"=",val)
+
+    def fitandplot_axis(self,axis):
+        
+        if axis == 0:
+            if self.axis0fitresult == None:
+                self.__fit_axis(axis)
+            plt.plot(self.axis0pts*self.__pixelsize,self.axis0data,"r-",\
+                self.axis0pts*self.__pixelsize,residual_G1D(self.axis0fitparams,self.axis0pts),"k-")
+            plt.xlabel("Position (mm)")
+            plt.ylabel("Intensity (arb. units)")
+            plt.title("Axis %.i"%axis)
+            plt.legend(("Data","Fit"))
+            plt.show()
+
+        if axis == 1:
+            if self.axis1fitresult == None:
+                self.__fit_axis(axis)
+            plt.plot(self.axis1pts*self.__pixelsize,self.axis1data,"r-",\
+                self.axis1pts*self.__pixelsize,residual_G1D(self.axis1fitparams,self.axis1pts),"k--")
+            plt.xlabel("Position (mm)")
+            plt.ylabel("Intensity (arb. units)")
+            plt.title("Axis %.i"%axis)
+            plt.legend(("Data","Fit"))
+            plt.show()
+            
+    def fitandprint_2D(self):
+        if self.fit2Dparams == None:
+            self.__fit2D()
+        print("The sizes are in mm")
+        for (key,val) in self.fit2Dparams.valuesdict().items():
+            print(key,"=",val)
+
+     def fitandprint_2D(self):
+        if self.fit2Dparams == None:
+            self.__fit2D()
+        print("The sizes are in mm")
+        for (key,val) in self.fit2Dparams.valuesdict().items():
+            print(key,"=",val)
+
+
+        
+        
 
     def plotimage(self,show=True):
         fig = plt.figure()
@@ -207,10 +292,10 @@ class Image:
             plt.show()
 
 if __name__ == '__main__':
-    q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\elliptical2.jpg")
+    q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\realpic1.bmp")
     #q.plotimage()
-    print(q.fit_axis(0))
-
+    #print(q.fit_axis(0))
+    q.fitandprint_2D()
 
 
 
