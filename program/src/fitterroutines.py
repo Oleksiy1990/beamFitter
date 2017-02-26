@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 
 from lmfit import Parameters, minimize, fit_report, Minimizer
 from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
@@ -8,7 +10,10 @@ import sys, os
 
 
 # check this, getting packages from the same directory
-from mathmodels import residual_G1D, residual_G2D, residual_G2D_norotation
+if __name__ == '__main__':
+    from mathmodels import residual_G1D, residual_G2D, residual_G2D_norotation
+else:
+    from src.mathmodels import residual_G1D, residual_G2D, residual_G2D_norotation
 
 class Image:
 
@@ -49,6 +54,8 @@ class Image:
         self.x2Dgrid = None
         self.y2Dgrid = None
         self.fit2Dparams = None
+
+        self.formatted_array = None #This will hold the array that's cut out of the picture
 
 
 
@@ -130,8 +137,7 @@ class Image:
         b_top = b_top if (b_top <= length_y) else length_y
 
 
-        formatted_array = self.image_array[b_left:b_right,b_bottom:b_top]
-        return formatted_array
+        self.formatted_array = self.image_array[b_left:b_right,b_bottom:b_top]
 
 
     def __fit_axis(self,axis,minim_method="nelder"):
@@ -196,7 +202,8 @@ class Image:
         # and is very close to the edge, the fitting will fail, because the x and y
         # center position estimates will be off
 
-        cropped_data = self.__format_picture(x2D_est,omegaX2D_est,y2D_est,omegaY2D_est)
+        self.__format_picture(x2D_est,omegaX2D_est,y2D_est,omegaY2D_est)
+        cropped_data = self.formatted_array
         xvals = np.linspace(1,cropped_data.shape[0],cropped_data.shape[0])
         yvals = np.linspace(1,cropped_data.shape[1],cropped_data.shape[1])
         x, y = np.meshgrid(yvals,xvals)
@@ -232,15 +239,25 @@ class Image:
         if axis == 0:
             if self.axis0fitresult == None:
                 self.__fit_axis(axis)
-            print("The sizes are in mm")
+            #print("The sizes are in mm")
             for (key,val) in self.axis0fitparams.valuesdict().items():
-                print(key,"=",val)
+                if key in ["I_zero","backgr"]:
+                    print(key,"=",val)
+                elif key in ["r_zero","omega_zero"]:
+                    print(key,"=",val*self.__pixelsize,"mm")
+                else:
+                    print("something went wrong in fitandprint_axis")
         if axis == 1:
             if self.axis1fitresult == None:
                 self.__fit_axis(axis)
             print("The sizes are in mm")
             for (key,val) in self.axis1fitparams.valuesdict().items():
-                print(key,"=",val)
+                if key in ["I_zero","backgr"]:
+                    print(key,"=",val)
+                elif key in ["r_zero","omega_zero"]:
+                    print(key,"=",val*self.__pixelsize,"mm")
+                else:
+                    print("something went wrong in fitandprint_axis")
 
     def fitandplot_axis(self,axis):
         
@@ -259,7 +276,7 @@ class Image:
             if self.axis1fitresult == None:
                 self.__fit_axis(axis)
             plt.plot(self.axis1pts*self.__pixelsize,self.axis1data,"r-",\
-                self.axis1pts*self.__pixelsize,residual_G1D(self.axis1fitparams,self.axis1pts),"k--")
+                self.axis1pts*self.__pixelsize,residual_G1D(self.axis1fitparams,self.axis1pts),"k-")
             plt.xlabel("Position (mm)")
             plt.ylabel("Intensity (arb. units)")
             plt.title("Axis %.i"%axis)
@@ -273,15 +290,36 @@ class Image:
         for (key,val) in self.fit2Dparams.valuesdict().items():
             print(key,"=",val)
 
-     def fitandprint_2D(self):
+    def fitandplot_2D(self):
+        
         if self.fit2Dparams == None:
             self.__fit2D()
-        print("The sizes are in mm")
-        for (key,val) in self.fit2Dparams.valuesdict().items():
-            print(key,"=",val)
-
-
         
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        
+        X,Y = self.x2Dgrid,self.y2Dgrid
+        fitted_surface_beam = residual_G2D_norotation(self.fit2Dparams,X,Y)
+        original_surface_beam = self.formatted_array
+        
+        ax.plot_surface(X, Y, fitted_surface_beam, cmap=cm.bwr,\
+                       linewidth=0, antialiased=False)
+        ax.plot_surface(X,Y,original_surface_beam,cmap=cm.bwr,linewidth=0,antialiased=False)
+
+        #cset = ax.contour(X, Y, fitted_surface_beam, zdir='z',offset=0, cmap=cm.bwr)
+        cset = ax.contour(X, Y, fitted_surface_beam, zdir='x',\
+            offset=X[0], cmap=cm.bwr)
+        cset = ax.contour(X, Y, fitted_surface_beam, zdir='y',\
+            offset=Y[-1], cmap=cm.bwr)
+
+        #cset1 = ax.contour(X, Y, original_surface_beam, zdir='z',offset=0, cmap=cm.bwr)
+        cset1 = ax.contour(X, Y, original_surface_beam, zdir='x',\
+            offset=X[0], cmap=cm.bwr)
+        cset1 = ax.contour(X, Y, original_surface_beam, zdir='y',\
+            offset=Y[-1], cmap=cm.bwr)
+        #fig.colorbar(surf)
+
+        plt.show()
         
 
     def plotimage(self,show=True):
@@ -292,10 +330,13 @@ class Image:
             plt.show()
 
 if __name__ == '__main__':
-    q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\realpic1.bmp")
+    #q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\realpic1.bmp")
+    q = Image(source="file",imagepath="/Users/oleksiy/Desktop/PythonCode/beamFitter/ExampleImages/framebefore1.bmp")
     #q.plotimage()
     #print(q.fit_axis(0))
-    q.fitandprint_2D()
-
+    #q.fitandprint_2D()
+    #q.fitandplot_2D()
+    q.fitandprint_axis(1)
+    q.fitandplot_axis(1)
 
 
