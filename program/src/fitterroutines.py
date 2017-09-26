@@ -17,7 +17,7 @@ else:
 
 class Image:
 
-    def __init__(self,source="file",imagepath=None,pixelsize_mm=5e-3,omega_fraction=2):
+    def __init__(self,source="file",imagepath=None,pixelsize_mm=5.2e-3,omega_fraction=2):
         """
         get the image from a file or some camera source and convert into into a
         numpy array with skimage.io.imread function
@@ -330,13 +330,14 @@ class Image:
             plt.show()
 
 if __name__ == '__main__':
-    #q = Image(source="file",imagepath="C:\\Users\\Oleksiy\\Desktop\\Code\\beamFitter\\ExampleImages\\realpic1.bmp")
-    q = Image(source="file",imagepath="/Users/oleksiy/Desktop/PythonCode/beamFitter/ExampleImages/framebefore1.bmp")
+    q = Image(source="file",imagepath="Q:\\qgases\\groups\\strontium\\Oleksiy\\ZSbeam1_20170926\\43.bmp")
+    #q = Image(source="file",imagepath="/Users/oleksiy/Desktop/PythonCode/beamFitter/ExampleImages/framebefore1.bmp")
     #q.plotimage()
     #print(q.fit_axis(0))
     #q.fitandprint_2D()
     #q.fitandplot_2D()
+    q.fitandprint_axis(0)
+    q.fitandplot_axis(0)
     q.fitandprint_axis(1)
     q.fitandplot_axis(1)
-
 
