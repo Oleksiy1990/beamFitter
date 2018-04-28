@@ -330,7 +330,7 @@ class Image:
             plt.show()
 
 if __name__ == '__main__':
-    q = Image(source="file",imagepath="Q:\\qgases\\groups\\strontium\\Oleksiy\\ZSbeam1_20170926\\43.bmp")
+    q = Image(source="file",imagepath="Q:\\qgases\\groups\\strontium\\Oleksiy\\transm1602\\7.bmp")
     #q = Image(source="file",imagepath="/Users/oleksiy/Desktop/PythonCode/beamFitter/ExampleImages/framebefore1.bmp")
     #q.plotimage()
     #print(q.fit_axis(0))
@@ -340,4 +340,7 @@ if __name__ == '__main__':
     q.fitandplot_axis(0)
     q.fitandprint_axis(1)
     q.fitandplot_axis(1)
+
+    #Axis 0 is vertical
+    #Axis 1 is horizontal
 
