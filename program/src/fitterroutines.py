@@ -7,7 +7,10 @@ from lmfit import Parameters, minimize, fit_report, Minimizer
 from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
 from skimage import io 
 import sys, os
-
+from astropy.io import fits
+import re
+import json
+import glob
 
 # check this, getting packages from the same directory
 if __name__ == '__main__':
@@ -17,7 +20,7 @@ else:
 
 class Image:
 
-    def __init__(self,source="file",imagepath=None,pixelsize_mm=5.2e-3,omega_fraction=2):
+    def __init__(self,source="file",imagepath=None,imagefile=None,pixelsize_mm=5.2e-3,omega_fraction=2):
         """
         get the image from a file or some camera source and convert into into a
         numpy array with skimage.io.imread function
@@ -32,14 +35,26 @@ class Image:
             sys.exit("The image source variable is incorrect. Use file ")
             # this is for possibly making it use pictures directly later
 
-        if source == "file" and isinstance(imagepath,str): 
-            try:
-                self.image_array = io.imread(imagepath,as_grey=True)
-                # image_array is an ndarray as returned by io.imread, in grayscale
-            except:
-                sys.exit("The image could not be read on path",imagepath)
+        imagepath = os.path.join(imagepath,imagefile)
+        if not os.path.isfile(imagepath):
+            sys.exit("Wrong path to file, exiting")
+        self.pathbase = os.path.splitext(imagepath)[0]
+        print("Base path: ",self.pathbase)
+
+        pat_fits = re.compile(r"\w+\.fits")
+        pat_bmp = re.compile(r"\w+\.bmp")
+        pat_jpg = re.compile(r"\w+\.jpg")
+        pat_png = re.compile(r"\w+\.png")
+        is_fits = bool(pat_fits.search(imagefile,re.IGNORECASE))
+        is_bmp = bool(pat_bmp.search(imagefile,re.IGNORECASE))
+        is_jpg = bool(pat_jpg.search(imagefile,re.IGNORECASE))
+        is_png = bool(pat_png.search(imagefile,re.IGNORECASE))
+        if is_fits:
+            self.image_array = fits.getdata(imagepath)
+        elif is_bmp or is_jpg or is_png:
+            self.image_array = io.imread(imagepath, as_grey=True)
         else:
-            sys.exit("Imagepath parameter must be a string")
+            sys.exit("Unrecognized image format. Exiting")
 
         self.__pixelsize = pixelsize_mm
         self.__omega_fraction = omega_fraction
@@ -56,9 +71,6 @@ class Image:
         self.fit2Dparams = None
 
         self.formatted_array = None #This will hold the array that's cut out of the picture
-
-
-
 
     def __startparams_estimate(self,data_array):
 
@@ -94,8 +106,6 @@ class Image:
         peak_height_estim = np.mean(peak_height_list[:5])
         peak_pos_estim = np.mean(peak_pos_list)
         background_estim = np.mean(background_list)
-
-
 
         # the estimation of the peak width only takes into account the most
         # highly smoothened data in this case
@@ -181,48 +191,53 @@ class Image:
 
 
 
-    def __fit2D(self,minim_method="nelder",rotation=False):
-        
-        self.__fit_axis(0,minim_method)
-        self.__fit_axis(1,minim_method)
+    def __fit2D(self,minim_method="leastsq",rotation=False,initial_params_2D = None):
+        if initial_params_2D is None:
+            self.__fit_axis(0,minim_method)
+            self.__fit_axis(1,minim_method)
 
-        # we first take all the initial parameters from 1D fits
-        bgr2D_est = self.axis0fitparams.valuesdict()["backgr"]/len(self.axis0pts)
-        x2D_est = self.axis0fitparams.valuesdict()["r_zero"]
-        omegaX2D_est = self.axis0fitparams.valuesdict()["omega_zero"]
-        y2D_est = self.axis1fitparams.valuesdict()["r_zero"]
-        omegaY2D_est = self.axis1fitparams.valuesdict()["omega_zero"]
+            # we first take all the initial parameters from 1D fits
+            bgr2D_est = np.mean([self.axis0fitparams.valuesdict()["backgr"]/len(self.axis0pts),self.axis1fitparams.valuesdict()["backgr"]/len(self.axis1pts)])
+            x2D_est = self.axis0fitparams.valuesdict()["r_zero"]
+            omegaX2D_est = self.axis0fitparams.valuesdict()["omega_zero"]
+            y2D_est = self.axis1fitparams.valuesdict()["r_zero"]
+            omegaY2D_est = self.axis1fitparams.valuesdict()["omega_zero"]
 
-        smoothened_image = gaussian_filter(self.image_array,50)
-        peakheight2D_est = np.amax(smoothened_image)
-        #now we need to programatically cut out the region of interest out of the
-        #whole picture so that fitting takes way less time
+            smoothened_image = gaussian_filter(self.image_array,50)
+            peakheight2D_est = np.amax(smoothened_image)
+            #now we need to programatically cut out the region of interest out of the
+            #whole picture so that fitting takes way less time
 
-        # NOTE! In this implementation, if the beam is small compared to picture size
-        # and is very close to the edge, the fitting will fail, because the x and y
-        # center position estimates will be off
+            # NOTE! In this implementation, if the beam is small compared to picture size
+            # and is very close to the edge, the fitting will fail, because the x and y
+            # center position estimates will be off
 
-        self.__format_picture(x2D_est,omegaX2D_est,y2D_est,omegaY2D_est)
-        cropped_data = self.formatted_array
-        xvals = np.linspace(1,cropped_data.shape[0],cropped_data.shape[0])
-        yvals = np.linspace(1,cropped_data.shape[1],cropped_data.shape[1])
-        x, y = np.meshgrid(yvals,xvals)
-        # NOTE! there's apparently some weird convention, this has to do with
-        # Cartesian vs. matrix indexing, which is explain in numpy.meshgrid manual
+            self.__format_picture(x2D_est,omegaX2D_est,y2D_est,omegaY2D_est)
+            cropped_data = self.formatted_array
+            xvals = np.linspace(1,cropped_data.shape[0],cropped_data.shape[0])
+            yvals = np.linspace(1,cropped_data.shape[1],cropped_data.shape[1])
+            x, y = np.meshgrid(yvals,xvals)
+            # NOTE! there's apparently some weird convention, this has to do with
+            # Cartesian vs. matrix indexing, which is explain in numpy.meshgrid manual
 
-        estimates_2D = Parameters()
-        estimates_2D.add("I_zero",value=peakheight2D_est,min=bgr2D_est)
-        estimates_2D.add("x_zero",value=0.5*len(yvals),min=0,max=len(yvals)) # NOTE! weird indexing conventions
-        estimates_2D.add("y_zero",value=0.5*len(xvals),min=0,max=len(xvals)) # NOTE! weird indexing conventions
-        estimates_2D.add("omegaX_zero",value=omegaX2D_est)
-        estimates_2D.add("omegaY_zero",value=omegaY2D_est)
-        estimates_2D.add("theta_rot",value=0*np.pi,min = 0,max = np.pi) #just starting with 0
-        estimates_2D.add("backgr",value=bgr2D_est)
-
+            estimates_2D = Parameters()
+            estimates_2D.add("I_zero",value=peakheight2D_est,min=bgr2D_est)
+            estimates_2D.add("x_zero",value=0.5*len(yvals),min=0,max=len(yvals)) # NOTE! weird indexing conventions
+            estimates_2D.add("y_zero",value=0.5*len(xvals),min=0,max=len(xvals)) # NOTE! weird indexing conventions
+            estimates_2D.add("omegaX_zero",value=omegaX2D_est)
+            estimates_2D.add("omegaY_zero",value=omegaY2D_est)
+            estimates_2D.add("theta_rot",value=0.578,min = 0,max = np.pi/2) #just starting with 0
+            estimates_2D.add("backgr",value=bgr2D_est)
+            print("Here are the parameters before the start of the fit: ")
+            print(estimates_2D.valuesdict())
+        else:
+            estimates_2D = initial_params_2D
+            print("Here are the parameters before the start of the fit: ")
+            print(estimates_2D.valuesdict())
 
         if rotation:
-            fit2D = Minimizer(residual_G2D,estimates_2D,fcn_args=(x,y),fcn_kws={"data":cropped_data})
-            print("Including rotation")
+                fit2D = Minimizer(residual_G2D,estimates_2D,fcn_args=(x,y),fcn_kws={"data":cropped_data})
+                print("Including rotation")
         else:
             fit2D = Minimizer(residual_G2D_norotation,estimates_2D,fcn_args=(x,y),fcn_kws={"data":cropped_data})
             print("Not including rotation")
@@ -283,23 +298,30 @@ class Image:
             plt.legend(("Data","Fit"))
             plt.show()
             
-    def fitandprint_2D(self):
+    def fitandprint_2D(self,rotation=False,save_json = False):
         if self.fit2Dparams == None:
-            self.__fit2D()
-        print("The sizes are in mm")
+            self.__fit2D(rotation=rotation)
+        print("The sizes are in px")
+        if save_json:
+            json_file = self.pathbase+".json"
+            with open(json_file,"w") as outfile:
+                json.dump(self.fit2Dparams.valuesdict(),outfile,indent=4)
         for (key,val) in self.fit2Dparams.valuesdict().items():
             print(key,"=",val)
 
-    def fitandplot_2D(self):
+    def fitandplot_2D(self,rotation=False):
         
         if self.fit2Dparams == None:
-            self.__fit2D()
+            self.__fit2D(rotation=rotation)
         
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         
         X,Y = self.x2Dgrid,self.y2Dgrid
-        fitted_surface_beam = residual_G2D_norotation(self.fit2Dparams,X,Y)
+        if rotation:
+            fitted_surface_beam = residual_G2D(self.fit2Dparams,X,Y)
+        else:
+            fitted_surface_beam = residual_G2D_norotation(self.fit2Dparams,X,Y)
         original_surface_beam = self.formatted_array
         
         ax.plot_surface(X, Y, fitted_surface_beam, cmap=cm.bwr,\
@@ -308,15 +330,15 @@ class Image:
 
         #cset = ax.contour(X, Y, fitted_surface_beam, zdir='z',offset=0, cmap=cm.bwr)
         cset = ax.contour(X, Y, fitted_surface_beam, zdir='x',\
-            offset=X[0], cmap=cm.bwr)
+            offset=0, cmap=cm.bwr)
         cset = ax.contour(X, Y, fitted_surface_beam, zdir='y',\
-            offset=Y[-1], cmap=cm.bwr)
+            offset=0, cmap=cm.bwr)
 
         #cset1 = ax.contour(X, Y, original_surface_beam, zdir='z',offset=0, cmap=cm.bwr)
         cset1 = ax.contour(X, Y, original_surface_beam, zdir='x',\
-            offset=X[0], cmap=cm.bwr)
+            offset=0, cmap=cm.bwr)
         cset1 = ax.contour(X, Y, original_surface_beam, zdir='y',\
-            offset=Y[-1], cmap=cm.bwr)
+            offset=0, cmap=cm.bwr)
         #fig.colorbar(surf)
 
         plt.show()
@@ -330,16 +352,22 @@ class Image:
             plt.show()
 
 if __name__ == '__main__':
-    q = Image(source="file",imagepath="Q:\\qgases\\groups\\strontium\\Oleksiy\\transm1602\\7.bmp")
-    #q = Image(source="file",imagepath="/Users/oleksiy/Desktop/PythonCode/beamFitter/ExampleImages/framebefore1.bmp")
-    #q.plotimage()
-    #print(q.fit_axis(0))
-    #q.fitandprint_2D()
-    #q.fitandplot_2D()
-    q.fitandprint_axis(0)
-    q.fitandplot_axis(0)
-    q.fitandprint_axis(1)
-    q.fitandplot_axis(1)
+    omega_frac = 3
+    imgpath = "D:\\VU\\HeNeImg\\"
+    filelist = glob.glob(imgpath+"*.fits")
+    fnames = [os.path.split(file)[1] for file in filelist]
+    print(fnames)
+    #fname = "10holes.fits"
+    for fname in fnames:
+        print(fname)
+        q = Image(source="file",imagepath=imgpath,imagefile=fname,pixelsize_mm=5.3e-3,omega_fraction=omega_frac)
+        #q.plotimage()
+        #q.fitandprint_axis(0)
+        #q.fitandplot_axis(0)
+        #q.fitandprint_axis(1)
+        #q.fitandplot_axis(1)
+        q.fitandprint_2D(rotation=True,save_json=True)
+        q.fitandplot_2D(rotation=True)
 
     #Axis 0 is vertical
     #Axis 1 is horizontal
