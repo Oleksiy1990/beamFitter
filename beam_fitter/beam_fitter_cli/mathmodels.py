@@ -1,16 +1,16 @@
 """
-This file defines the math models used in fitting beams. These are the models
+This file defined the math models used in fitting beams. These are the models
 that go into the Minimizer function of the lmfit package to carry out minimization
 
 As of now, there are only two models, 1D and 2D Gaussians, corresponding to 
-Gaussian 00 mode in 2D, but this can be extended later for more 
+Gaussian 00 mode in 2D, but this can possibly be extended later for more 
 complicated beam patterns, like the non-00 mode
 """
 
 
 import numpy as np 
 
-def residual_G1D(pars, x, data=None, eps=None):
+def residual_G1D(pars, x, data = None, eps = None):
 	""" 
 	G1D stands for "Gaussian 1D" 
 
@@ -18,23 +18,40 @@ def residual_G1D(pars, x, data=None, eps=None):
 	returns the residuals to be minimized if data are supplied, or 
 	the Gaussian model itself if no data are supplied
 
-	residual(pars, x, data=None, eps=None)
+	residual_G1D(pars, x, data=None, eps=None)
+
+	Parameters
+	----
+    pars : lmfit.Parameters object
+        This object must contain the initial guesses for the parameters 
+    x : array_like
+        the x-values of the data
+    data : array_like or None, optional, default = None
+        the data to be fit
+    eps : float or array_like or None, optional, default = None
+        the error bars in the data
+
+    Returns
+    -------
+    array_like
+        the residuals to be minimized
 	"""
 	parvals = pars.valuesdict() # a Parameters() object is passed as "pars"
-	intensity_max = parvals["I_zero"]
-	centerposition = parvals["r_zero"]
-	beamwidth = parvals["omega_zero"]
-	bgr = parvals["backgr"]
-	model = intensity_max*np.exp(-2*np.power(x-centerposition,2)/beamwidth**2) + bgr
+	intensity_max = parvals["peak_height"]
+	centerposition = parvals["peak_position"]
+	beamwidth = parvals["peak_width"]
+	bgr = parvals["background"]
+	model = intensity_max*np.exp(-2.0*np.power(x-centerposition,2)/beamwidth**2) + bgr
 	if data is None:
 		return np.array(model)
 	if eps is None:
 		return np.array(model - data)
 	return np.array((model - data)/eps)
 
-def residual_G2D(pars,x,y,data=None, eps=None):
+def residual_G2D(pars, x, y, data = None, eps = None):
 	"""
 	G2D stands for "Gaussian 2D"
+	NOT IMPLEMENTED YET
 
 	this function defines the Gaussian model for beam fitting in 2D and
 	returns the residuals to be minimized if data are supplied, or 
@@ -42,7 +59,7 @@ def residual_G2D(pars,x,y,data=None, eps=None):
 	returned in as a flattened list, because that's how LMFIT wants them. 
 	If the model itself is returned, the list is not flattened
 
-	residual_2D(pars,x,y,data=None, eps=None)
+	residual_G2D(pars,x,y,data=None, eps=None)
 	"""
 	parvals = pars.valuesdict() # a Parameters() object is passed as "pars"
 	intensity_max = parvals["I_zero"]
@@ -73,6 +90,7 @@ def residual_G2D(pars,x,y,data=None, eps=None):
 
 def residual_G2D_norotation(pars,x,y,data=None, eps=None):
 	"""
+	NOT IMPLEMENTED YET
 	G2D stands for "Gaussian 2D"
 	This model assumes that the elliptical Gaussian beam is aligned parallel
 	to the axes, so there's no rotation angle theta

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools >= 65",
+            "wheel >= 0.38"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beam_fitter"
+version = "0.1.0"
+authors = [
+  { name="Oleksiy Onishchenko", email="oleksiy1990@gmail.com" }
+]
+description = "A small example package"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "lmfit",
+    "astropy",
+    "scikit-image"]
