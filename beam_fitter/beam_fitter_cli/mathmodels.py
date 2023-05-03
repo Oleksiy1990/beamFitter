@@ -9,8 +9,15 @@ complicated beam patterns, like the non-00 mode
 
 
 import numpy as np 
+import lmfit 
+import typing
+import numpy.typing as npt
 
-def residual_G1D(pars, x, data = None, eps = None):
+def residual_G1D(
+		pars : lmfit.Parameters, 
+		x : npt.NDArray, 
+		data : typing.Union[npt.NDArray,None] = None, 
+		eps : typing.Union[npt.NDArray,None] = None):
 	""" 
 	G1D stands for "Gaussian 1D" 
 

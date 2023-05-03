@@ -5,7 +5,19 @@ from scipy.ndimage import gaussian_filter1d
 import sys
 
 
-import fitterroutines
+import beam_fitter.beam_fitter_cli.fitterroutines as ftr
+import beam_fitter.beam_fitter_cli.mathmodels as mm
+import lmfit
+
+pars_correct = lmfit.Parameters()
+pars_correct.add("peak_height")
+pars_correct.add("peak_width")
+pars_correct.add("peak_position")
+pars_correct.add("background")
+mm.residual_G1D(pars_correct,np.array([1,2,3,4]))
+sys.exit(0)
+
+
 img = "../../ExampleImages/framebefore1.bmp"
 Img1 = fitterroutines.Image(source="file",imagepath=img)
 Img1.pixelsize_mm = 2.54

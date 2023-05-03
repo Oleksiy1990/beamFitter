@@ -13,6 +13,7 @@ from astropy.io import fits
 
 # this is the way to import at the same level inside package
 from . import mathmodels
+from . import image
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -23,196 +24,11 @@ from matplotlib import cm
 import sys, os
 import re
 import json
-import glob
-
-class Image:
-    """
-    Loads and holds the image from different sources, could be a file, 
-    could be a USB camera, for example, or could also be a network connection
-
-    Attributes
-    ----------
-    data: numpy.ndarray
-        Holds the 2D numpy array representing the image
-    pixelsize_mm : float or int, default = 1
-        Pixel size for the image, expressed in mm
-        if the value is 1, this means that the we are working in pixels
-
-    """
-
-    def __init__(self,
-                 source: str = "file",
-                 pixelsize_mm : typing.Union[float, int] = 1,
-                 imagepath : str = "",
-                 comport : str = "",
-                 debug : bool = False):
-                 #,pixelsize_mm=5.2e-3,omega_fraction=2):
-        """
-        get the image from a file or some camera source and convert into into a
-        numpy array with skimage.io.imread function
-
-        Parameters
-        ----------
-        source : {"file","COMPORT","LAN"}
-            When getting the images from file, one has to write imagepath,
-            when getting the images from the comport, one has to use the appropriate
-            serial communication approach, and specify COM-port and baud rate,
-            when getting the images from LAN, one also has to appropriately 
-            specify IP address, etc.
-            
-            LAN not implemented yet
-        pixelsize_mm : float or int, default = 1
-        imagepath : str, default = ""
-            either the full path to the image, or the relative path with 
-            respect to the current working directory
-        comport: str, default = ""
-        debug : bool, default = False
-
-
-        param: source
-        param: imagepath
-        param: omega_fraction
-
-        retuns: imagearray, which has the numpy array form of the original image
-        """
-
-
-        if source == "file":
-            # write the methods here to generate a numpy array when the 
-            # image is to be taken from a file
-            if debug:
-                print("{:s}.__init__(): imagepath provided: {:s}".
-                      format(self.__class__.__name__,imagepath))
-            if not os.path.isfile(imagepath):
-                print("{:s}.__init__(): imagepath provided: {:s}".
-                      format(self.__class__.__name__,imagepath))
-                sys.exit("Wrong path to file, exiting")
-                # if the image path is wrong, we exit the application (for now)
-            self.pathbase = os.path.splitext(imagepath)[0]
-            print("Base path: ",self.pathbase)
-
-            # patterns for detecting supported data types
-            pat_fits = re.compile(r"\w+\.fits")
-            pat_bmp = re.compile(r"\w+\.bmp")
-            pat_jpg = re.compile(r"\w+\.jpg")
-            pat_png = re.compile(r"\w+\.png")
-
-            # this checks which file extennsion pattern matches 
-            is_fits = bool(pat_fits.search(imagepath,re.IGNORECASE))
-            is_bmp = bool(pat_bmp.search(imagepath,re.IGNORECASE))
-            is_jpg = bool(pat_jpg.search(imagepath,re.IGNORECASE))
-            is_png = bool(pat_png.search(imagepath,re.IGNORECASE))
-            
-            # now we fill the attribute self.data with the appropriate 
-            # numpy array
-            if is_fits:
-                self.data = fits.getdata(imagepath)
-            elif is_bmp or is_jpg or is_png:
-                self.data = io.imread(imagepath, as_gray=True)
-            else:
-                print("{:s}.__init__()".
-                      format(self.__class__.__name__))
-                sys.exit("Unrecognized image format. Exiting")
-
-            if source != "file":
-                sys.exit("The image source variable is incorrect. Use file ")
-                # this is for possibly making it use pictures directly later
-
-        self.pixelsize_mm = pixelsize_mm
-
-    def crop(self, vertical_low: typing.Union[float,int], 
-                    vertical_high: typing.Union[float,int],
-                    horizontal_low: typing.Union[float,int],
-                    horizontal_high: typing.Union[float,int],
-                    measurement_units: str = "pixel") -> None:
-        """
-        crop the image to a region of interest by giving the edges of the 
-        cropped area
-        """
-        if measurement_units not in ["pixel","mm"]:
-            print("{:s}.crop() : Measurement units must be pixel or mm".
-                    format(self.__class__.__name__))
-            print("you supplied {:s} as measurement_units".format(measurement_units))
-            print("This is not allowed, not doing cropping")
-            return
-        if any(x < 0 for x in [vertical_low,vertical_high,horizontal_low,horizontal_high]):
-            print("{:s}.crop() : you supplied the cropping region with at least one negative bound".
-                    format(self.__class__.__name__))
-            print("This is not allowed, not doing cropping")
-            return
-        if (vertical_low >= vertical_high) or (horizontal_low >= horizontal_high):
-            print("{:s}.crop() : lower bounds of cropping region are equal of above upper bounds".
-                    format(self.__class__.__name__))
-            print("This is not allowed, not doing cropping")
-            
-        if measurement_units == "pixel":
-            try:
-                self.data = self.data[vertical_low:vertical_high,horizontal_low:horizontal_high]
-            except IndexError:
-                print("{:s}.crop() : cropping region is outside the image indices".
-                        format(self.__class__.__name__))
-                print("Current image size in pixels: {0}".format(self.data.shape))
-                print("Not doing cropping")
-        elif measurement_units == "mm":
-            vertical_pix_low = int(vertical_low/self.pixelsize_mm)
-            vertical_pix_high = int(vertical_high/self.pixelsize_mm)
-            horizonal_pix_low = int(horizontal_low/self.pixelsize_mm)
-            horizonal_pix_high = int(horizontal_high/self.pixelsize_mm)
-            try:
-                self.data = self.data[vertical_pix_low:vertical_pix_high,
-                                      horizontal_pix_low:horizontal_pix_high]
-            except IndexError:
-                print("{:s}.crop() : cropping region is outside the image indices".
-                        format(self.__class__.__name__))
-                print("Current image size in mm: ({:.3f},{:.3f})".
-                      format(self.data.shape[0]*self.pixelsize_mm,
-                             self.data.shape[1]*self.pixelsize_mm))
-                print("Not doing cropping")
-
-    def __format_picture(self,x_cent,omega_x,y_cent,omega_y):
-
-        """
-        This function takes a 2D array and the values for center position of a Gaussian
-        peak and its width to crop out a region within a given number of omega from the
-        center (the default is 2*omega). This is useful for 2D fitting and plotting, when
-        the beam is much smaller than the entire picture size, it's much faster to
-        only fit where the peak as, without evaluating too many background points
-
-        """
-
-        # one has to be careful here because index 0 is not necessarily "x" in plots
-        # index 0 is always rows, and that's what usually plotted vertically
-
-        length_x = self.image_array.shape[0]
-        length_y = self.image_array.shape[1]
-
-        # Define the positions of the borders on left, right, top, bottom 
-        b_left = int(x_cent - self.__omega_fraction*omega_x)
-        b_right = int(x_cent + self.__omega_fraction*omega_x)
-        b_bottom = int(y_cent - self.__omega_fraction*omega_y)
-        b_top = int(y_cent + self.__omega_fraction*omega_y)
-        b_left = b_left if (b_left >= 0) else 0
-        b_right = b_right if (b_right <= length_x) else length_x
-        b_bottom = b_bottom if (b_bottom >= 0) else 0
-        b_top = b_top if (b_top <= length_y) else length_y
-
-
-        self.formatted_array = self.image_array[b_left:b_right,b_bottom:b_top]
-
-
-    def plotimage(self,show=True):
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.pcolorfast(self.data)
-        if show:
-            plt.show()
-
-
 class Fitter:
     """
     Takes the image and performs a fit
     """
-    def __init__(self, image_in : Image) -> None:
+    def __init__(self, image_in : image.Image) -> None:
         self.image = image_in # this has to hold the image to fit
         # image has to have attributes: 
         #   data -> holding a numpy array, pixelsize_mm -> holding pixel size in mm
@@ -223,7 +39,7 @@ class Fitter:
         # vertical_integrated: data summed up along each row
         self.vertical_integrated = self.image.data.sum(axis = 1) 
         self.vertical_xvalues = np.array(range(len(self.vertical_integrated)))
-        # horizonal_integrated: data summed up along each column
+        # horizontal_integrated: data summed up along each column
         self.horizontal_integrated = self.image.data.sum(axis = 0) 
         self.horizontal_xvalues = np.array(range(len(self.horizontal_integrated)))
 
@@ -350,14 +166,14 @@ class Fitter:
         to data summed up along each column, so like integrated 
         image by looking at it from the top
         
-        After running this funciton, self.startparams_horizonal, which is a Paramters
+        After running this funciton, self.startparams_horizontal, which is a Paramters
         object, will contain all the necessary starting parameters to run lmfit
         """
         startparams_horizontal_tuple = self.__startparams_estimate(self.horizontal_integrated)
         
         conv = self.__pixelsize_to_use
         # We will now add all the necessary starting parameters to run lmfit
-        # Remember that startparams_horizonal is a Parameters object
+        # Remember that startparams_horizontal is a Parameters object
         # NOTE! We do not apply conv (convertsion factor from pixels to mm) 
         # to peak_height, and background
         self.startparams_horizontal.add("peak_height",
@@ -394,7 +210,7 @@ class Fitter:
 
         if axis not in ["vertical", "horizontal"]:
             sys.exit("""{:s}.__fit_axis(): 
-                     axis argument can only have values "vertical" or "horizonal
+                     axis argument can only have values "vertical" or "horizontal
                      """.format(self.__class__.__name__))
         conv = self.__pixelsize_to_use
         if (axis == "horizontal"):
@@ -456,7 +272,7 @@ class Fitter:
 
         if axis not in ["vertical", "horizontal"]:
             sys.exit("""{:s}.fitantprint_integrated_axis(): 
-                     axis argument can only have values "vertical" or "horizonal"
+                     axis argument can only have values "vertical" or "horizontal"
                      """.format(self.__class__.__name__))
         
         self.__fit_integrated_axis(axis, method)
@@ -475,7 +291,7 @@ class Fitter:
         
         if axis not in ["vertical", "horizontal"]:
             sys.exit("""{:s}.fitantplot_integrated_axis(): 
-                     axis argument can only have values "vertical" or "horizonal"
+                     axis argument can only have values "vertical" or "horizontal"
                      """.format(self.__class__.__name__))
         # first we always fit and print the values
         self.fitandprint_integrated_axis(axis, method)
